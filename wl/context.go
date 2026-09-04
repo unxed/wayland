@@ -20,6 +20,61 @@ type Context struct {
 	currentId ProxyId
 	objects   map[ProxyId]Proxy
 	scms      []sys.SocketControlMessage
+
+	// The compositor requires client-allocated ids to arrive in the order
+	// they were allocated: libwayland's wl_map rejects a new id that is
+	// not the next free slot ("not a valid new object id"). Register hands
+	// out ids in order, but the request that carries an id to the wire is
+	// written later, by whichever goroutine created the proxy, so two
+	// goroutines can write their requests in the wrong order. sendMu
+	// serialises writes, unsent holds the ids Register has handed out
+	// that no request has carried yet, and sendCond lets a writer wait
+	// until every smaller id has gone.
+	sendMu   sync.Mutex
+	sendCond *sync.Cond
+	unsent   map[ProxyId]struct{}
+}
+
+// markUnsent records a freshly allocated client id as not yet on the wire.
+func (ctx *Context) markUnsent(id ProxyId) {
+	ctx.sendMu.Lock()
+	if ctx.unsent == nil {
+		ctx.unsent = make(map[ProxyId]struct{})
+		ctx.sendCond = sync.NewCond(&ctx.sendMu)
+	}
+	ctx.unsent[id] = struct{}{}
+	ctx.sendMu.Unlock()
+}
+
+// forgetUnsent drops an id from the unsent set and wakes any writer that
+// was waiting for it. Called once the id is on the wire, or when the proxy
+// is unregistered without ever being sent, so nobody waits for it forever.
+func (ctx *Context) forgetUnsent(id ProxyId) {
+	ctx.sendMu.Lock()
+	ctx.forgetUnsentLocked(id)
+	ctx.sendMu.Unlock()
+}
+
+func (ctx *Context) forgetUnsentLocked(id ProxyId) {
+	if ctx.unsent == nil {
+		return
+	}
+	if _, ok := ctx.unsent[id]; !ok {
+		return
+	}
+	delete(ctx.unsent, id)
+	ctx.sendCond.Broadcast()
+}
+
+// smallerUnsentLocked reports whether some id below id is still unsent.
+// Callers hold sendMu.
+func (ctx *Context) smallerUnsentLocked(id ProxyId) bool {
+	for other := range ctx.unsent {
+		if other < id {
+			return true
+		}
+	}
+	return false
 }
 
 func (ctx *Context) RegisterMapped(proxy Proxy, num uint32) {
@@ -53,6 +108,7 @@ func (ctx *Context) Register(proxy Proxy) {
 		SetUserData(c, &ctx)
 	}
 	ctx.objects[ctx.currentId] = proxy
+	ctx.markUnsent(ctx.currentId)
 }
 
 // Unregister unregisters a proxy in the map of all Context objects (proxies)
@@ -62,6 +118,7 @@ func (ctx *Context) Unregister(id ProxyId) {
 		delete(ctx.objects, id)
 	}
 	ctx.mu.Unlock()
+	ctx.forgetUnsent(id)
 }
 
 // LookupProxy looks up a specific proxy by it's Id in the map of all Context objects (proxies)

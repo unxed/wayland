@@ -47,6 +47,32 @@ func (ctx *Context) SendRequest(proxy Proxy, opcode uint32, args ...interface{})
 		return err
 	}
 
+	// Ids this request introduces to the compositor. Usually none or one.
+	var newIds []ProxyId
+	ctx.sendMu.Lock()
+	for _, arg := range args {
+		p, ok := arg.(Proxy)
+		if !ok {
+			continue
+		}
+		if _, pending := ctx.unsent[p.Id()]; pending {
+			newIds = append(newIds, p.Id())
+		}
+	}
+	// A new id may only go out once every smaller id is on the wire; see
+	// the comment on Context.sendMu. Requests without a new id never wait.
+	for _, id := range newIds {
+		for ctx.smallerUnsentLocked(id) {
+			ctx.sendCond.Wait()
+		}
+	}
+	defer func() {
+		for _, id := range newIds {
+			ctx.forgetUnsentLocked(id)
+		}
+		ctx.sendMu.Unlock()
+	}()
+
 	if ctx.conn != nil {
 		return writeRequest(ctx.conn, req)
 	} else if ctx.sockFD != -1 {
