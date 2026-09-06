@@ -21,7 +21,6 @@ func TestNewIdsReachTheWireInOrder(t *testing.T) {
 	}
 	ctx := &Context{sockFD: fds[0], objects: make(map[ProxyId]Proxy)}
 	display := NewDisplay(ctx) // id 1, never sent; the compositor owns it
-	ctx.forgetUnsent(display.Id())
 	reader := os.NewFile(uintptr(fds[1]), "compositor")
 	defer reader.Close()
 

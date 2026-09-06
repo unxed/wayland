@@ -108,7 +108,14 @@ func (ctx *Context) Register(proxy Proxy) {
 		SetUserData(c, &ctx)
 	}
 	ctx.objects[ctx.currentId] = proxy
-	ctx.markUnsent(ctx.currentId)
+	// The display is the one client-side proxy the compositor already
+	// knows: its id (1) is fixed by the protocol and no request ever
+	// carries it as a new_id. Tracking it as unsent would leave every
+	// later new id -- starting with wl_display.get_registry -- waiting
+	// for a write that never comes.
+	if _, isDisplay := proxy.(*Display); !isDisplay {
+		ctx.markUnsent(ctx.currentId)
+	}
 }
 
 // Unregister unregisters a proxy in the map of all Context objects (proxies)
