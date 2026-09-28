@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-vet:
+    name: build+vet (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            goos: linux
+            goarch: amd64
+            native: true
+          - name: windows
+            goos: windows
+            goarch: amd64
+            native: false
+          - name: js-wasm
+            goos: js
+            goarch: wasm
+            native: false
+          - name: darwin
+            goos: darwin
+            goarch: arm64
+            native: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install native build dependencies (linux only)
+        if: matrix.native
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwayland-dev libxkbcommon-dev libvulkan-dev libx11-dev libglvnd-core-dev
+
+      - name: go build ./...
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.native && '1' || '0' }}
+        run: go build ./...
+
+      - name: go vet ./...
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.native && '1' || '0' }}
+        run: go vet ./...
+
+  e2e-smoke:
+    name: e2e smoke (headless weston)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install weston and Wayland/xkb runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            weston libwayland-dev libxkbcommon-dev
+
+      - name: Build the CI smoke client
+        run: go build -o /tmp/go-wayland-ci-smoke ./go-wayland-ci-smoke
+
+      - name: Start headless weston
+        run: |
+          mkdir -p /tmp/xdg-runtime
+          chmod 700 /tmp/xdg-runtime
+          echo "XDG_RUNTIME_DIR=/tmp/xdg-runtime" >> "$GITHUB_ENV"
+          echo "WAYLAND_DISPLAY=wayland-ci" >> "$GITHUB_ENV"
+          XDG_RUNTIME_DIR=/tmp/xdg-runtime WAYLAND_DEBUG=1 \
+            weston --backend=headless-backend.so --socket=wayland-ci --idle-time=0 \
+            > /tmp/weston.log 2>&1 &
+          echo "Waiting for the Wayland socket to appear..."
+          for i in $(seq 1 30); do
+            if [ -S "/tmp/xdg-runtime/wayland-ci" ]; then
+              echo "weston is up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          if [ ! -S "/tmp/xdg-runtime/wayland-ci" ]; then
+            echo "weston did not create its socket in time"
+            cat /tmp/weston.log || true
+            exit 1
+          fi
+
+      - name: Run the real Wayland client against real headless weston
+        run: |
+          /tmp/go-wayland-ci-smoke "org.unxed.wayland.ci-smoke"
+
+      - name: Verify xdg_toplevel.set_app_id actually reached the compositor
+        run: |
+          echo "--- weston log (tail) ---"
+          tail -n 100 /tmp/weston.log || true
+          if grep -q "set_app_id" /tmp/weston.log; then
+            echo "OK: set_app_id request found in the compositor's protocol log"
+          else
+            echo "FAIL: set_app_id was not seen in the compositor's protocol log"
+            exit 1
+          fi
+
+      - name: Stop weston
+        if: always()
+        run: pkill -f 'weston --backend=headless-backend.so' || true
+
+      - name: Upload weston log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weston-log
+          path: /tmp/weston.log
+          if-no-files-found: ignore
