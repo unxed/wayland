@@ -1,3 +1,6 @@
+//go:build linux || darwin
+// +build linux darwin
+
 // Package libdecor implements a purego api to libdecor C library for window decorations in libwayland
 package libdecor
 

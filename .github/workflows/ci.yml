@@ -11,27 +11,41 @@ concurrency:
 jobs:
   build-vet:
     name: build+vet (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: linux
+            runs_on: ubuntu-latest
             goos: linux
             goarch: amd64
-            native: true
+            cgo: "1"
+            apt: true
           - name: windows
+            runs_on: ubuntu-latest
             goos: windows
             goarch: amd64
-            native: false
+            cgo: "0"
+            apt: false
           - name: js-wasm
+            runs_on: ubuntu-latest
             goos: js
             goarch: wasm
-            native: false
+            cgo: "0"
+            apt: false
           - name: darwin
+            # Cross-compiling darwin with CGO_ENABLED=0 is not enough here:
+            # window/window_darwin.go already needs the Cocoa/QuartzCore
+            # bridge in window_cgo_darwin.go (tag "darwin && cgo") for
+            # everything except the new no-op SetAppID, so a real macOS
+            # runner (free for public repos, no cross-toolchain to fake) is
+            # the simplest way to actually validate this build tag.
+            runs_on: macos-latest
             goos: darwin
             goarch: arm64
-            native: false
+            cgo: "1"
+            apt: false
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +54,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install native build dependencies (linux only)
-        if: matrix.native
+        if: matrix.apt
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -58,7 +72,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: ${{ matrix.native && '1' || '0' }}
+          CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           echo "list=$(go list -e ./... | grep -v '/go-wayland-cube$' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
 
@@ -66,14 +80,14 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: ${{ matrix.native && '1' || '0' }}
+          CGO_ENABLED: ${{ matrix.cgo }}
         run: go build ${{ steps.pkgs.outputs.list }}
 
       - name: go vet
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: ${{ matrix.native && '1' || '0' }}
+          CGO_ENABLED: ${{ matrix.cgo }}
         run: go vet ${{ steps.pkgs.outputs.list }}
 
   e2e-smoke:

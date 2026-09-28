@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 // Copyright 2026 Neurlang project
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
