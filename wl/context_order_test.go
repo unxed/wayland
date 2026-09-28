@@ -1,3 +1,6 @@
+//go:build !windows && !js
+// +build !windows,!js
+
 package wl
 
 import (

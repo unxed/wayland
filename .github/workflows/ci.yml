@@ -83,12 +83,16 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: go build ${{ steps.pkgs.outputs.list }}
 
+      # -unsafeptr=false: libdecor and libwayland are purego FFI bridges that
+      # round-trip pointers through uintptr by construction (calling into a
+      # dynamically loaded C library without cgo) - the standard, accepted
+      # reason to turn this one analyzer off for this kind of code.
       - name: go vet
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: ${{ matrix.cgo }}
-        run: go vet ${{ steps.pkgs.outputs.list }}
+        run: go vet -unsafeptr=false ${{ steps.pkgs.outputs.list }}
 
   e2e-smoke:
     name: e2e smoke (headless weston)

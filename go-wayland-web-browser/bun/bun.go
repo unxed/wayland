@@ -12,7 +12,7 @@ func RenderDocument(ctx *gg.Context, document *hotdog.Document, experimentalLayo
 		document.DOM.RenderBox.Width = float64(ctx.Width())
 		document.DOM.RenderBox.Height = float64(ctx.Height())
 
-		ctx.ClearWithColor(gg.RGBA{body.Style.BackgroundColor.R, body.Style.BackgroundColor.G, body.Style.BackgroundColor.B, 1})
+		ctx.ClearWithColor(gg.RGBA{R: body.Style.BackgroundColor.R, G: body.Style.BackgroundColor.G, B: body.Style.BackgroundColor.B, A: 1})
 
 		layoutDOM(ctx, body, 0)
 	} else {
