@@ -87,12 +87,17 @@ jobs:
       # round-trip pointers through uintptr by construction (calling into a
       # dynamically loaded C library without cgo) - the standard, accepted
       # reason to turn this one analyzer off for this kind of code.
+      # -asmdecl=false: external/swizzle's hand-written amd64 assembly names
+      # its slice argument's FP offsets "p"/"len" instead of the compiler's
+      # expected "p_base"/"p_len" - harmless (the offsets are correct), but
+      # asmdecl only knows the compiler's naming convention. Pre-existing,
+      # unrelated to this workflow; not worth touching working SIMD asm for.
       - name: go vet
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: ${{ matrix.cgo }}
-        run: go vet -unsafeptr=false ${{ steps.pkgs.outputs.list }}
+        run: go vet -unsafeptr=false -asmdecl=false ${{ steps.pkgs.outputs.list }}
 
   e2e-smoke:
     name: e2e smoke (headless weston)
