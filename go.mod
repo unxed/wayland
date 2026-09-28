@@ -1,8 +1,9 @@
 module github.com/neurlang/wayland
 
-go 1.25.0
+go 1.25.5
 
 require (
+	github.com/aglyzov/charmap v0.0.0-20240916203842-8463cca61eca
 	github.com/danfragoso/thdwb/profiler v0.0.0-20210612223625-beb2b4a85bbb
 	github.com/ebitengine/purego v0.7.1
 	github.com/fogleman/gg v1.3.0
@@ -23,7 +24,6 @@ require (
 )
 
 require (
-	github.com/aglyzov/charmap v0.0.0-20240916203842-8463cca61eca // indirect
 	github.com/gogpu/gpucontext v0.28.0 // indirect
 	github.com/gogpu/gputypes v0.5.2 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
